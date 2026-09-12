@@ -97,7 +97,7 @@
   function card(p) {
     const cold = p.daysSilent > 45 && p.emails >= 5;
     return `<div class="pg-card" data-email="${esc(p.email)}">
-      <div class="pg-name"><span class="pg-dot" style="background:${color(p.warmth)};margin-left:0"></span>${esc(p.name || p.email)}
+      <div class="pg-name"><span class="pg-dot" style="background:${color(p.warmth)};margin-left:0"></span><a href="https://mail.google.com/mail/u/0/#search/${encodeURIComponent("from:" + p.email + " OR to:" + p.email)}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dotted #9aa7b5" title="open their emails">${esc(p.name || p.email)}</a>
         <span class="pg-score" style="color:${color(p.warmth)}">${p.warmth ?? "–"}</span></div>
       <div class="pg-muted">${esc(p.company || p.email)} · ${p.emails} emails · last contact ${esc(p.lastSeen || "never")}${p.daysSilent > 0 ? ` (${p.daysSilent}d ago)` : ""}</div>
       ${p.topics.length ? `<div>${p.topics.map(t => `<span class="pg-tag">${esc(t)}</span>`).join("")}</div>` : ""}

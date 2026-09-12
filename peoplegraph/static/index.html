@@ -60,6 +60,10 @@
 <main>
   <div id="graph"></div>
   <aside>
+    <section id="selectedSec">
+      <h2>Selected</h2>
+      <div id="personOut" class="empty">click a person in the graph</div>
+    </section>
     <section>
       <h2>Warmest path to…</h2>
       <div class="row">
@@ -82,10 +86,6 @@
       <div id="radarOut" class="empty">companies in your network, grouped by sector, ranked by your reach</div>
     </section>
     <section>
-      <h2>Selected</h2>
-      <div id="personOut" class="empty">click a person in the graph</div>
-    </section>
-    <section>
       <h2>Agent memory (AgentAction nodes)</h2>
       <div id="actionsOut" class="empty">nothing yet</div>
     </section>
@@ -97,6 +97,7 @@
 const $ = s => document.querySelector(s);
 const api = async (url, opts) => { const r = await fetch(url, opts); if (!r.ok) throw new Error((await r.json()).detail || r.statusText); return r.json(); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gmailUrl = email => `https://mail.google.com/mail/u/0/#search/${encodeURIComponent('from:' + email + ' OR to:' + email)}`;
 const warmthColor = w => w == null ? '#6e7681' : w > 70 ? '#3fb950' : w >= 40 ? '#d29922' : '#f85149';
 
 let network, nodes = new vis.DataSet(), edges = new vis.DataSet();
@@ -133,7 +134,7 @@ async function loadGraph(highlightNew) {
       interaction: { hover:true, tooltipDelay:120 },
       edges: { smooth:{ type:'continuous' } },
     });
-    network.on('click', p => { const n = p.nodes[0] && nodes.get(p.nodes[0]); if (n && n.kind === 'person') showPerson(n.email); });
+    network.on('click', p => { const n = p.nodes[0] && nodes.get(p.nodes[0]); if (!n) return; if (n.kind === 'person') showPerson(n.email); else if (String(n.id).startsWith('company:')) { $('#company').value = String(n.id).slice(8); findPath(); } });
   }
   if (highlightNew) {
     const fresh = ns.filter(n => !before.has(n.id)).map(n => n.id);
@@ -160,7 +161,7 @@ async function loadCold() {
   if (!rows.length) { $('#coldOut').innerHTML = '<div class="empty">nobody is going cold 🎉</div>'; return; }
   $('#coldOut').className = ''; $('#coldOut').innerHTML = rows.map(r => `<div class="card">
       <span class="score" style="color:${warmthColor(r.warmth)}">${r.warmth ?? '–'}</span>
-      <div class="t">${esc(r.name)}</div>
+      <div class="t"><a href="${gmailUrl(r.email)}" target="_blank" title="open their emails in Gmail" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--muted)">${esc(r.name)} ↗</a></div>
       <div class="m">${esc(r.company || r.email)} · ${r.history} emails · silent ${r.daysSilent} days${r.openCommitments ? ' · owes you ' + r.openCommitments : ''}</div>
       <div class="row" style="margin-top:6px"><button class="ghost" onclick="showPerson('${r.email}')">context</button>
       <button class="ghost" onclick="draftFor('${r.email}', this)">draft re-engagement</button></div></div>`).join('');
@@ -180,11 +181,14 @@ async function draftFor(email, btn) {
 }
 
 async function showPerson(email) {
+  $('#personOut').className = 'empty'; $('#personOut').textContent = 'loading ' + email + '…';
+  $('#selectedSec').scrollIntoView({ behavior:'smooth', block:'start' });
   const p = await api('/person/' + encodeURIComponent(email));
+  $('#personOut').className = '';
   const c = p.person;
   $('#personOut').innerHTML = `<div class="card">
     <span class="score" style="color:${warmthColor(c.warmth)}">${c.warmth ?? '–'}</span>
-    <div class="t">${esc(c.name)}</div>
+    <div class="t"><a href="${gmailUrl(c.email)}" target="_blank" title="open their emails in Gmail" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--muted)">${esc(c.name)} ↗</a></div>
     <div class="m">${esc(p.company || c.email)} · ${c.emails} emails · ${c.meetings} meetings · last seen ${esc(c.lastSeen)}</div>
     <div style="margin-top:6px">${p.topics.map(t => `<span class="tag">${esc(t)}</span>`).join('') || '<span class="m">no topics extracted</span>'}</div>
     ${p.commitments.length ? '<div class="m" style="margin-top:6px"><b>commitments</b></div>' + p.commitments.map(x => `<div class="m">• [${x.direction === 'owed_by_me' ? 'I owe' : 'they owe'}${x.status === 'open' ? '' : ', done'}] ${esc(x.text)}</div>`).join('') : ''}
@@ -200,7 +204,7 @@ async function loadBrief() {
   if (!b.meeting) { $('#briefOut').innerHTML = '<div class="empty">no upcoming meetings</div>'; return; }
   $('#briefOut').className = ''; $('#briefOut').innerHTML = `<div class="card"><div class="t">${esc(b.meeting)}</div><div class="m">${esc(b.start).slice(0,16).replace('T',' ')}</div></div>` +
     b.attendees.map(a => `<div class="card"><span class="score" style="color:${warmthColor(a.warmth)}">${a.warmth ?? '–'}</span>
-      <div class="t">${esc(a.name)} <span class="m">· ${esc(a.company || '')}</span></div>
+      <div class="t"><a href="${gmailUrl(a.email)}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--muted)">${esc(a.name)} ↗</a> <span class="m">· ${esc(a.company || '')}</span></div>
       <div class="m">${a.emails} emails · last seen ${esc(a.lastSeen)}</div>
       <div>${a.topics.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
       ${a.theyOwe.length ? `<div class="m">they owe: ${a.theyOwe.map(esc).join('; ')}</div>` : ''}
