@@ -40,10 +40,58 @@
     if (panel) return panel;
     panel = document.createElement("div");
     panel.id = "pg-panel";
-    panel.innerHTML = `<div class="pg-head"><b>PeopleGraph</b><span id="pg-status"></span><button id="pg-toggle" title="collapse">–</button></div><div id="pg-body" class="pg-empty">Open an email or event to see who you actually know.</div>`;
+    panel.innerHTML = `<div class="pg-head"><b>PeopleGraph</b><span id="pg-status"></span><button id="pg-toggle" title="collapse">–</button></div>
+      <div class="pg-search"><input id="pg-company" placeholder="Warm path to… (stripe, a16z, notion)"><button id="pg-go">Path</button></div>
+      <div id="pg-paths"></div>
+      <div id="pg-body" class="pg-empty">Open an email or event to see who you actually know.</div>`;
     document.body.appendChild(panel);
-    panel.querySelector("#pg-toggle").onclick = () => { collapsed = !collapsed; panel.querySelector("#pg-body").hidden = collapsed; panel.querySelector("#pg-toggle").textContent = collapsed ? "+" : "–"; };
+    panel.querySelector("#pg-toggle").onclick = () => { collapsed = !collapsed; panel.querySelector("#pg-body").hidden = collapsed; panel.querySelector("#pg-paths").hidden = collapsed; panel.querySelector("#pg-toggle").textContent = collapsed ? "+" : "–"; };
+    panel.querySelector("#pg-go").onclick = warmPath;
+    panel.querySelector("#pg-company").addEventListener("keydown", e => { if (e.key === "Enter") warmPath(); e.stopPropagation(); });
+    panel.querySelector("#pg-company").addEventListener("keypress", e => e.stopPropagation()); // keep Gmail shortcuts out
+    // drag by the header
+    const head = panel.querySelector(".pg-head");
+    let drag = null;
+    head.addEventListener("mousedown", e => { if (e.target.tagName === "BUTTON") return; const r = panel.getBoundingClientRect(); drag = { dx: e.clientX - r.left, dy: e.clientY - r.top }; e.preventDefault(); });
+    window.addEventListener("mousemove", e => { if (!drag) return; panel.style.left = (e.clientX - drag.dx) + "px"; panel.style.top = (e.clientY - drag.dy) + "px"; panel.style.right = "auto"; panel.style.bottom = "auto"; });
+    window.addEventListener("mouseup", () => drag = null);
     return panel;
+  }
+
+  async function warmPath() {
+    const q = panel.querySelector("#pg-company").value.trim(), out = panel.querySelector("#pg-paths");
+    if (!q) return;
+    out.innerHTML = `<div class="pg-card pg-muted">searching the graph…</div>`;
+    try {
+      const r = await fetch(`${API}/path?company=${encodeURIComponent(q)}`);
+      const { paths } = await r.json();
+      out.innerHTML = paths.length ? paths.map(p => `<div class="pg-card pg-path"><span class="pg-score" style="color:${color(p.score)}">${p.score}</span>
+          ${p.path.map((n, i) => i === 0 ? "You" : i === p.path.length - 1 ? `<b>${esc(n)}</b>` : esc(n)).join(" → ")}
+          <div class="pg-muted">${p.hops} hop${p.hops > 1 ? "s" : ""} · ${esc(p.contact)} @ ${esc(p.company)}</div></div>`).join("")
+        : `<div class="pg-card pg-muted">No path to "${esc(q)}" in your graph yet.</div>`;
+    } catch (e) { out.innerHTML = `<div class="pg-card pg-muted">API offline</div>`; }
+  }
+
+  // Connection tree: You ── (introducer / mutuals / colleagues) ── Person, as inline SVG.
+  function tree(p) {
+    const mids = [];
+    p.introducedBy.forEach(n => mids.push({ n, kind: "introduced you" }));
+    p.mutual.forEach(m => { if (!mids.find(x => x.n === m.name)) mids.push({ n: m.name, kind: "mutual", w: m.warmth }); });
+    p.colleagues.forEach(m => { if (!mids.find(x => x.n === m.name)) mids.push({ n: m.name, kind: "colleague", w: m.warmth }); });
+    const rows = mids.slice(0, 4);
+    if (!rows.length) return "";
+    const W = 300, rowH = 22, H = Math.max(44, rows.length * rowH + 12), midY = H / 2;
+    const trunc = s => s.length > 16 ? s.slice(0, 15) + "…" : s;
+    const lines = rows.map((m, i) => {
+      const y = 10 + i * rowH + rowH / 2, c = color(m.w);
+      return `<path d="M30 ${midY} C 80 ${midY}, 80 ${y}, 120 ${y}" stroke="${c}" stroke-opacity=".7" fill="none"/>
+              <path d="M120 ${y} C 200 ${y}, 200 ${midY}, 270 ${midY}" stroke="${c}" stroke-opacity=".7" fill="none"/>
+              <circle cx="120" cy="${y}" r="3.5" fill="${c}"/><text x="128" y="${y + 3.5}">${esc(trunc(m.n))}</text>
+              <text class="lbl" x="128" y="${y - 6}">${m.kind}</text>`;
+    }).join("");
+    return `<svg class="pg-tree" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${lines}
+      <circle cx="30" cy="${midY}" r="6" fill="#fff"/><text x="6" y="${midY + 16}">You</text>
+      <circle cx="270" cy="${midY}" r="6" fill="${color(p.warmth)}"/><text x="240" y="${midY + 16}">${esc(trunc((p.name || p.email).split(" ")[0]))}</text></svg>`;
   }
 
   function card(p) {
@@ -55,7 +103,9 @@
       ${p.topics.length ? `<div>${p.topics.map(t => `<span class="pg-tag">${esc(t)}</span>`).join("")}</div>` : ""}
       ${p.iOwe.length ? `<div class="pg-line"><b>you owe:</b> ${p.iOwe.map(esc).join("; ")}</div>` : ""}
       ${p.theyOwe.length ? `<div class="pg-line"><b>they owe:</b> ${p.theyOwe.map(esc).join("; ")}</div>` : ""}
-      ${p.introducedBy.length ? `<div class="pg-line"><b>introduced by:</b> ${p.introducedBy.map(esc).join(", ")}</div>` : ""}
+      ${tree(p)}
+      ${p.introducedBy.length ? `<div class="pg-line"><b>introduced you:</b> ${p.introducedBy.map(esc).join(", ")}</div>` : ""}
+      ${p.introduced.length ? `<div class="pg-line"><b>they introduced you to:</b> ${p.introduced.map(esc).join(", ")}</div>` : ""}
       ${p.actions ? `<div class="pg-line"><b>agent memory:</b> ${p.actions} prior action${p.actions > 1 ? "s" : ""}</div>` : ""}
       ${cold ? `<div class="pg-alert">Going cold — ${p.daysSilent} days silent after ${p.emails} emails.</div>` : ""}
       <button class="pg-btn ${cold ? "" : "ghost"}" data-draft="${esc(p.email)}">Draft re-engagement</button>

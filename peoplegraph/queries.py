@@ -83,9 +83,19 @@ OPTIONAL MATCH (a:AgentAction)-[:CONCERNS]->(p)
 WITH p, c, emails, theyOwe, iOwe, topics, count(a) AS actions
 OPTIONAL MATCH (x:Person)-[i:INTRODUCED]->(p) WHERE NOT x.isMe
 WITH p, c, emails, theyOwe, iOwe, topics, actions, collect(DISTINCT x.name)[..2] AS introducedBy
+OPTIONAL MATCH (p)-[:INTRODUCED]->(y:Person) WHERE NOT y.isMe
+WITH p, c, emails, theyOwe, iOwe, topics, actions, introducedBy, collect(DISTINCT y.name)[..3] AS introduced
+OPTIONAL MATCH (me:Person {isMe:true})-[:EMAILED]-(m:Person)-[:EMAILED]-(p) WHERE NOT m.isMe AND m <> p
+WITH p, c, emails, theyOwe, iOwe, topics, actions, introducedBy, introduced, m ORDER BY m.warmth DESC
+WITH p, c, emails, theyOwe, iOwe, topics, actions, introducedBy, introduced,
+     [x IN collect(DISTINCT {name: m.name, warmth: m.warmth}) WHERE x.name IS NOT NULL][..4] AS mutual
+OPTIONAL MATCH (p)-[:WORKS_AT]->(:Company)<-[:WORKS_AT]-(col:Person)-[:EMAILED]-(:Person {isMe:true})
+WHERE col <> p
+WITH p, c, emails, theyOwe, iOwe, topics, actions, introducedBy, introduced, mutual,
+     [x IN collect(DISTINCT {name: col.name, warmth: col.warmth}) WHERE x.name IS NOT NULL][..3] AS colleagues
 RETURN p.email AS email, p.name AS name, c.name AS company, p.warmth AS warmth,
        toString(p.lastSeen) AS lastSeen, duration.inDays(coalesce(p.lastSeen, date()), date()).days AS daysSilent,
-       emails, topics, theyOwe, iOwe, actions, introducedBy
+       emails, topics, theyOwe, iOwe, actions, introducedBy, introduced, mutual, colleagues
 """
 
 WRITE_ACTION = """
