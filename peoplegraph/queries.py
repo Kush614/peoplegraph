@@ -128,11 +128,21 @@ ORDER BY a.createdAt DESC LIMIT 20
 """
 
 
-def graph(driver) -> dict:
+def graph(driver, min_warmth: int = 15) -> dict:
+    """Nodes + edges for vis-network. Real inboxes have ~1k people; keep the canvas readable by
+    showing only people above a warmth floor (me and anyone the agent has acted on always shown)."""
     n = db.run(driver, GRAPH)[0]
     e = db.run(driver, EDGES)[0]
-    return {"nodes": n["people"] + n["companies"] + n["actions"],
-            "edges": e["emailed"] + e["works"] + e["intros"] + [c for c in e["concerns"] if c]}
+    acted = {a["concerns"] for a in n["actions"]}
+    people = [p for p in n["people"] if p["isMe"] or p["id"] in acted or (p["warmth"] or 0) >= min_warmth]
+    ids = {p["id"] for p in people}
+    edges = [x for x in e["emailed"] + e["intros"] if x["from"] in ids and x["to"] in ids]
+    works = [x for x in e["works"] if x["from"] in ids]
+    used_companies = {x["to"] for x in works}
+    companies = [c for c in n["companies"] if c["id"] in used_companies]
+    return {"nodes": people + companies + n["actions"],
+            "edges": edges + works + [c for c in e["concerns"] if c],
+            "hidden": len(n["people"]) - len(people)}
 
 
 def warm_path(driver, company: str) -> list[dict]:

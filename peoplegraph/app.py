@@ -38,8 +38,8 @@ def index():
 
 
 @app.get("/graph")
-def graph():
-    return queries.graph(app.state.driver)
+def graph(min_warmth: int = Query(15, ge=0, le=100)):
+    return queries.graph(app.state.driver, min_warmth)
 
 
 @app.get("/companies")

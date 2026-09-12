@@ -9,15 +9,16 @@
   :root { --bg:#0b0f14; --panel:#121820; --line:#1f2a36; --text:#e6edf3; --muted:#8b98a5;
           --hot:#3fb950; --warm:#d29922; --cold:#f85149; --company:#58a6ff; --action:#bc8cff; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif; }
-  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif; display:flex; flex-direction:column; overflow:hidden; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); flex:0 0 auto; }
   header h1 { font-size:16px; margin:0; letter-spacing:.3px; }
   header .legend { display:flex; gap:12px; color:var(--muted); font-size:12px; margin-left:auto; }
   .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
   .sq { border-radius:2px; }
-  main { display:grid; grid-template-columns: 1fr 380px; height: calc(100vh - 45px); }
-  #graph { height:100%; }
-  aside { border-left:1px solid var(--line); overflow-y:auto; padding:14px; background:var(--panel); }
+  main { display:grid; grid-template-columns: 1fr 380px; grid-template-rows: minmax(0,1fr); flex:1 1 auto; min-height:0; }
+  #graph { height:100%; min-height:0; }
+  aside { border-left:1px solid var(--line); overflow-y:auto; min-height:0; padding:14px; background:var(--panel); }
   section { margin-bottom:22px; }
   h2 { font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); margin:0 0 8px; }
   input, button { font:inherit; border-radius:6px; border:1px solid var(--line); background:#0d1117; color:var(--text); padding:7px 10px; }
@@ -47,6 +48,7 @@
 <header>
   <h1>PeopleGraph</h1>
   <span style="color:var(--muted)">who you actually know — and who's drifting</span>
+  <label style="color:var(--muted);font-size:12px;margin-left:16px">show warmth ≥ <input id="minW" type="range" min="0" max="80" value="15" style="vertical-align:middle;width:110px"> <span id="minWv">15</span></label>
   <div class="legend">
     <span><i class="dot" style="background:var(--hot)"></i>warm &gt;70</span>
     <span><i class="dot" style="background:var(--warm)"></i>40–70</span>
@@ -119,14 +121,15 @@ function toVis(g) {
 }
 
 async function loadGraph(highlightNew) {
-  const g = await api('/graph');
+  const g = await api('/graph?min_warmth=' + (window.minWarmth ?? 15));
   const { ns, es } = toVis(g);
   const before = new Set(nodes.getIds());
   nodes.update(ns); edges.update(es);
   for (const id of before) if (!ns.find(n => n.id === id)) nodes.remove(id);
   if (!network) {
     network = new vis.Network($('#graph'), { nodes, edges }, {
-      physics: { solver:'forceAtlas2Based', forceAtlas2Based:{ gravitationalConstant:-40, springLength:110, avoidOverlap:0.6 }, stabilization:{ iterations:200 } },
+      physics: { solver:'forceAtlas2Based', forceAtlas2Based:{ gravitationalConstant:-40, springLength:110, avoidOverlap:0.6 }, stabilization:{ enabled:true, iterations:120, updateInterval:25, fit:true } },
+      layout: { improvedLayout:false },
       interaction: { hover:true, tooltipDelay:120 },
       edges: { smooth:{ type:'continuous' } },
     });
@@ -136,7 +139,7 @@ async function loadGraph(highlightNew) {
     const fresh = ns.filter(n => !before.has(n.id)).map(n => n.id);
     if (fresh.length) { network.selectNodes(fresh); network.focus(fresh[0], { scale:1.2, animation:true }); }
   }
-  $('#status').textContent = `${g.nodes.filter(n=>n.kind==='person').length} people · ${g.nodes.filter(n=>n.kind==='company').length} companies · ${g.nodes.filter(n=>n.kind==='action').length} agent actions`;
+  $('#status').textContent = `${g.nodes.filter(n=>n.kind==='person').length} people shown (${g.hidden||0} weaker ties hidden) · ${g.nodes.filter(n=>n.kind==='company').length} companies · ${g.nodes.filter(n=>n.kind==='action').length} agent actions`;
 }
 
 async function findPath() {
@@ -144,7 +147,7 @@ async function findPath() {
   $('#pathOut').innerHTML = '<div class="empty">searching…</div>';
   const r = await api('/path?company=' + encodeURIComponent(c));
   if (!r.paths.length) { $('#pathOut').innerHTML = '<div class="empty">no path found</div>'; return; }
-  $('#pathOut').innerHTML = r.paths.map(p =>
+  $('#pathOut').className = ''; $('#pathOut').innerHTML = r.paths.map(p =>
     `<div class="card path"><span class="score" style="color:${warmthColor(p.score)}">${p.score}</span>
       ${p.path.map((n,i) => i === p.path.length-1 ? `<b>${esc(n)}</b>` : esc(n)).join(' → ')}
       <div class="m">${p.hops} hop${p.hops>1?'s':''} · ${esc(p.contact)} @ ${esc(p.company)}</div></div>`).join('');
@@ -155,7 +158,7 @@ async function findPath() {
 async function loadCold() {
   const rows = await api('/cold');
   if (!rows.length) { $('#coldOut').innerHTML = '<div class="empty">nobody is going cold 🎉</div>'; return; }
-  $('#coldOut').innerHTML = rows.map(r => `<div class="card">
+  $('#coldOut').className = ''; $('#coldOut').innerHTML = rows.map(r => `<div class="card">
       <span class="score" style="color:${warmthColor(r.warmth)}">${r.warmth ?? '–'}</span>
       <div class="t">${esc(r.name)}</div>
       <div class="m">${esc(r.company || r.email)} · ${r.history} emails · silent ${r.daysSilent} days${r.openCommitments ? ' · owes you ' + r.openCommitments : ''}</div>
@@ -195,7 +198,7 @@ async function loadBrief() {
   $('#briefOut').innerHTML = '<div class="empty">building brief…</div>';
   const b = await api('/brief');
   if (!b.meeting) { $('#briefOut').innerHTML = '<div class="empty">no upcoming meetings</div>'; return; }
-  $('#briefOut').innerHTML = `<div class="card"><div class="t">${esc(b.meeting)}</div><div class="m">${esc(b.start).slice(0,16).replace('T',' ')}</div></div>` +
+  $('#briefOut').className = ''; $('#briefOut').innerHTML = `<div class="card"><div class="t">${esc(b.meeting)}</div><div class="m">${esc(b.start).slice(0,16).replace('T',' ')}</div></div>` +
     b.attendees.map(a => `<div class="card"><span class="score" style="color:${warmthColor(a.warmth)}">${a.warmth ?? '–'}</span>
       <div class="t">${esc(a.name)} <span class="m">· ${esc(a.company || '')}</span></div>
       <div class="m">${a.emails} emails · last seen ${esc(a.lastSeen)}</div>
@@ -208,19 +211,21 @@ async function loadBrief() {
 async function loadActions() {
   const rows = await api('/actions');
   if (!rows.length) { $('#actionsOut').innerHTML = '<div class="empty">nothing yet — every draft, brief and query gets written back here</div>'; return; }
-  $('#actionsOut').innerHTML = rows.map(a => `<div class="card"><div class="t">${esc(a.type)} → ${esc(a.person)}</div>
+  $('#actionsOut').className = ''; $('#actionsOut').innerHTML = rows.map(a => `<div class="card"><div class="t">${esc(a.type)} → ${esc(a.person)}</div>
     <div class="m">${esc(a.createdAt).slice(0,16).replace('T',' ')}</div><div class="m">${esc((a.content||'').slice(0,140))}${(a.content||'').length>140?'…':''}</div></div>`).join('');
 }
 
 async function loadRadar() {
   $('#radarOut').innerHTML = '<div class="empty">scanning + sector-tagging your network…</div>';
   const r = await api('/radar');
-  $('#radarOut').innerHTML = r.sectors.slice(0, 14).map(s => `<div class="sector"><div class="t">${esc(s.sector)}<span>${s.companies.length} companies · reach ${s.reach}</span></div>
+  $('#radarOut').className = ''; $('#radarOut').innerHTML = r.sectors.slice(0, 14).map(s => `<div class="sector"><div class="t">${esc(s.sector)}<span>${s.companies.length} companies · reach ${s.reach}</span></div>
     <div class="bubbles">${s.companies.slice(0, 8).map(c => `<span class="bubble" title="${esc(c.names.join(', '))} · ${c.people} people · last contact ${esc(c.lastContact||'–')}"
       style="background:${warmthColor(c.maxWarmth)};font-size:${Math.min(14, 10 + c.people)}px;opacity:${0.55 + Math.min(0.45, c.reach/200)}"
       onclick="$('#company').value='${esc(c.domain)}';findPath()">${esc(c.name)} ${c.maxWarmth ?? ''}</span>`).join('')}</div></div>`).join('');
 }
 $('#radarBtn').onclick = loadRadar;
+$('#minW').oninput = e => { $('#minWv').textContent = e.target.value; };
+$('#minW').onchange = e => { window.minWarmth = +e.target.value; nodes.clear(); edges.clear(); loadGraph(false); };
 $('#pathBtn').onclick = findPath;
 $('#company').addEventListener('keydown', e => { if (e.key === 'Enter') findPath(); });
 $('#coldRefresh').onclick = loadCold;
