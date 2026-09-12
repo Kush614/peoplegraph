@@ -21,6 +21,8 @@ STATIC = Path(__file__).parent / "static"
 async def lifespan(app: FastAPI):
     app.state.driver = db.get_driver()
     app.state.driver.verify_connectivity()
+    rows = db.run(app.state.driver, "MATCH (p:Person {isMe:true}) RETURN p.email AS email LIMIT 1")
+    app.state.me = rows[0]["email"] if rows else ""
     yield
     app.state.driver.close()
 
@@ -81,7 +83,7 @@ def brief():
 
 @app.get("/lookup")
 def lookup(emails: str = Query(..., description="comma-separated emails visible on screen")):
-    wanted = [e.strip().lower() for e in emails.split(",") if "@" in e][:40]
+    wanted = [e.strip().lower() for e in emails.split(",") if "@" in e and e.strip().lower() != app.state.me][:40]
     found = {r["email"]: r for r in queries.lookup(app.state.driver, wanted)}
     return {"people": [found[e] for e in wanted if e in found], "unknown": [e for e in wanted if e not in found]}
 

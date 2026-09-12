@@ -69,7 +69,7 @@ RETURN {name: me.name, email: me.email} AS me,
 
 LOOKUP = """
 UNWIND $emails AS em
-MATCH (p:Person {email: em})
+MATCH (p:Person {email: em}) WHERE NOT p.isMe
 OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
 OPTIONAL MATCH (me:Person {isMe:true})-[e:EMAILED]-(p)
 WITH p, c, sum(e.count) AS emails
