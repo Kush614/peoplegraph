@@ -35,13 +35,19 @@
       (pane.innerText.match(EMAIL_RE) || []).slice(0, 12).forEach(add);
     } else if (host === "docs.google.com" || host === "drive.google.com") {
       // Share dialog, "people with access" list, comment threads and the collaborator avatars all carry hovercard ids.
-      document.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@'], [aria-label*='@']").forEach(el =>
-        add(el.getAttribute("data-hovercard-id") || el.getAttribute("data-email") || (el.getAttribute("aria-label").match(EMAIL_RE) || [])[0]));
-      document.querySelectorAll('[role="dialog"]').forEach(d => (d.innerText.match(EMAIL_RE) || []).forEach(add));
+      document.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@'], [aria-label*='@'], [title*='@']").forEach(el => {
+        for (const a of ["data-hovercard-id", "data-email", "aria-label", "title"]) {
+          const v = el.getAttribute(a); const m = v && v.match(EMAIL_RE); if (m) { m.forEach(add); break; }
+        }
+      });
+      document.querySelectorAll('[role="dialog"], [role="complementary"]').forEach(d => (d.innerText.match(EMAIL_RE) || []).forEach(add));
     } else {
-      // Meet / Chat: participant and member panels
-      document.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@'], [data-member-id*='@']").forEach(el =>
-        add(el.getAttribute("data-hovercard-id") || el.getAttribute("data-email") || el.getAttribute("data-member-id")));
+      // Meet / Chat: participant and member panels expose emails in data-*, aria-label or title attributes
+      document.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@'], [data-member-id*='@'], [data-user-id*='@'], [aria-label*='@'], [title*='@']").forEach(el => {
+        for (const a of ["data-hovercard-id", "data-email", "data-member-id", "data-user-id", "aria-label", "title"]) {
+          const v = el.getAttribute(a); const m = v && v.match(EMAIL_RE); if (m) { m.forEach(add); break; }
+        }
+      });
       (document.body.innerText.match(EMAIL_RE) || []).slice(0, 25).forEach(add);
     }
     return [...found].slice(0, 25);
@@ -125,11 +131,22 @@
     </div>`;
   }
 
+  const HINTS = {
+    "mail.google.com": "Open an email to see who you actually know.",
+    "calendar.google.com": "Click an event to brief every attendee.",
+    "contacts.google.com": "Open a contact to see the relationship.",
+    "docs.google.com": "Open Share or a comment thread to see collaborators.",
+    "drive.google.com": "Open a file's Share dialog or 'Manage access' to see collaborators.",
+    "meet.google.com": "Open the People panel to see who's on the call.",
+    "chat.google.com": "Open a space or DM to see its members.",
+  };
+
   async function render(emails) {
     const key = emails.join(",");
+    ensurePanel();
     if (key === lastKey) return;
     lastKey = key;
-    const body = ensurePanel().querySelector("#pg-body"), status = panel.querySelector("#pg-status");
+    const body = panel.querySelector("#pg-body"), status = panel.querySelector("#pg-status");
     if (!emails.length) { body.className = "pg-empty"; body.innerHTML = "Open an email, event, contact, share dialog or meeting to see who you actually know."; status.textContent = ""; return; }
     status.textContent = "looking up…";
     try {
@@ -189,5 +206,6 @@
   const schedule = () => { clearTimeout(timer); timer = setTimeout(() => render(visibleEmails()), 400); };
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("hashchange", schedule);
+  ensurePanel();
   schedule();
 })();
