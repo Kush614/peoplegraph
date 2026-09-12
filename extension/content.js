@@ -1,7 +1,9 @@
 // PeopleGraph overlay: finds the people on screen in Gmail / Calendar, asks the local API about them,
 // renders a card panel, and decorates names with a warmth dot.
 (() => {
-  console.info("[PeopleGraph] content script loaded on", location.host);
+  // Drive/Docs previews and Meet panels live in iframes; only mount in frames big enough to be a real surface.
+  if (window !== window.top && (window.innerWidth < 600 || window.innerHeight < 400)) return;
+  console.info("[PeopleGraph] content script loaded on", location.host, window === window.top ? "(top)" : "(frame)");
   const DEFAULT_API = "http://127.0.0.1:8010";
   let API = DEFAULT_API;
   chrome.storage?.sync?.get({ apiBase: DEFAULT_API }, v => { API = v.apiBase || DEFAULT_API; });
