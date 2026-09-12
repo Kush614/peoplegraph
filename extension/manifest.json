@@ -2,16 +2,40 @@
   "manifest_version": 3,
   "name": "PeopleGraph",
   "version": "0.1.0",
-  "description": "Relationship graph overlay for Gmail and Google Calendar: warmth, last contact, open commitments, warm intros — and one-click re-engagement drafts.",
-  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
-  "action": { "default_popup": "popup.html", "default_title": "PeopleGraph" },
-  "permissions": ["storage"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "description": "Relationship graph overlay for Gmail and Google Calendar: warmth, last contact, open commitments, warm intros \u2014 and one-click re-engagement drafts.",
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PeopleGraph"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://mail.google.com/*", "https://calendar.google.com/*", "https://contacts.google.com/*", "https://meet.google.com/*"],
-      "js": ["content.js"],
-      "css": ["overlay.css"],
+      "matches": [
+        "https://mail.google.com/*",
+        "https://calendar.google.com/*",
+        "https://contacts.google.com/*",
+        "https://meet.google.com/*",
+        "https://docs.google.com/*",
+        "https://drive.google.com/*",
+        "https://chat.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
       "run_at": "document_idle"
     }
   ]

@@ -8,6 +8,7 @@
   const color = w => w == null ? "#6e7681" : w > 70 ? "#3fb950" : w >= 40 ? "#d29922" : "#f85149";
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+  // Add a "Google" tab-agnostic hint in the empty state.
 
   // ---- who is on screen? ---------------------------------------------------------------
   function visibleEmails() {
@@ -28,8 +29,20 @@
         sc.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@']").forEach(el => add(el.getAttribute("data-hovercard-id") || el.getAttribute("data-email")));
         (sc.innerText.match(EMAIL_RE) || []).forEach(add);
       });
+    } else if (host === "contacts.google.com") {
+      // Contact detail pane lists the address as text; the list view is too noisy, so scope to the open contact.
+      const pane = document.querySelector('[role="main"]') || document.body;
+      (pane.innerText.match(EMAIL_RE) || []).slice(0, 12).forEach(add);
+    } else if (host === "docs.google.com" || host === "drive.google.com") {
+      // Share dialog, "people with access" list, comment threads and the collaborator avatars all carry hovercard ids.
+      document.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@'], [aria-label*='@']").forEach(el =>
+        add(el.getAttribute("data-hovercard-id") || el.getAttribute("data-email") || (el.getAttribute("aria-label").match(EMAIL_RE) || [])[0]));
+      document.querySelectorAll('[role="dialog"]').forEach(d => (d.innerText.match(EMAIL_RE) || []).forEach(add));
     } else {
-      (document.body.innerText.match(EMAIL_RE) || []).slice(0, 40).forEach(add);
+      // Meet / Chat: participant and member panels
+      document.querySelectorAll("[data-hovercard-id*='@'], [data-email*='@'], [data-member-id*='@']").forEach(el =>
+        add(el.getAttribute("data-hovercard-id") || el.getAttribute("data-email") || el.getAttribute("data-member-id")));
+      (document.body.innerText.match(EMAIL_RE) || []).slice(0, 25).forEach(add);
     }
     return [...found].slice(0, 25);
   }
@@ -43,7 +56,7 @@
     panel.innerHTML = `<div class="pg-head"><b>PeopleGraph</b><span id="pg-status"></span><button id="pg-toggle" title="collapse">–</button></div>
       <div class="pg-search"><input id="pg-company" placeholder="Warm path to… (stripe, a16z, notion)"><button id="pg-go">Path</button></div>
       <div id="pg-paths"></div>
-      <div id="pg-body" class="pg-empty">Open an email or event to see who you actually know.</div>`;
+      <div id="pg-body" class="pg-empty">Open an email, event, contact, share dialog or meeting to see who you actually know.</div>`;
     document.body.appendChild(panel);
     panel.querySelector("#pg-toggle").onclick = () => { collapsed = !collapsed; panel.querySelector("#pg-body").hidden = collapsed; panel.querySelector("#pg-paths").hidden = collapsed; panel.querySelector("#pg-toggle").textContent = collapsed ? "+" : "–"; };
     panel.querySelector("#pg-go").onclick = warmPath;
@@ -117,7 +130,7 @@
     if (key === lastKey) return;
     lastKey = key;
     const body = ensurePanel().querySelector("#pg-body"), status = panel.querySelector("#pg-status");
-    if (!emails.length) { body.className = "pg-empty"; body.innerHTML = "Open an email or event to see who you actually know."; status.textContent = ""; return; }
+    if (!emails.length) { body.className = "pg-empty"; body.innerHTML = "Open an email, event, contact, share dialog or meeting to see who you actually know."; status.textContent = ""; return; }
     status.textContent = "looking up…";
     try {
       const r = await fetch(`${API}/lookup?emails=${encodeURIComponent(key)}`);

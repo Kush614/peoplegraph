@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PeopleGraph CRM", lifespan=lifespan)
 # The Chrome extension's content scripts call this API from mail.google.com / calendar.google.com.
 app.add_middleware(CORSMiddleware, allow_origins=["https://mail.google.com", "https://calendar.google.com",
-                                                  "https://contacts.google.com", "https://meet.google.com", "https://docs.google.com"],
+                                                  "https://contacts.google.com", "https://meet.google.com", "https://docs.google.com", "https://drive.google.com", "https://chat.google.com"],
                    allow_methods=["GET", "POST"], allow_headers=["*"])
 
 
