@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PeopleGraph CRM</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root { --bg:#0b0f14; --panel:#121820; --line:#1f2a36; --text:#e6edf3; --muted:#8b98a5;
+          --hot:#3fb950; --warm:#d29922; --cold:#f85149; --company:#58a6ff; --action:#bc8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.3px; }
+  header .legend { display:flex; gap:12px; color:var(--muted); font-size:12px; margin-left:auto; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
+  .sq { border-radius:2px; }
+  main { display:grid; grid-template-columns: 1fr 380px; height: calc(100vh - 45px); }
+  #graph { height:100%; }
+  aside { border-left:1px solid var(--line); overflow-y:auto; padding:14px; background:var(--panel); }
+  section { margin-bottom:22px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); margin:0 0 8px; }
+  input, button { font:inherit; border-radius:6px; border:1px solid var(--line); background:#0d1117; color:var(--text); padding:7px 10px; }
+  input { width:100%; }
+  button { cursor:pointer; background:#1f6feb; border-color:#1f6feb; }
+  button.ghost { background:transparent; border-color:var(--line); color:var(--muted); font-size:12px; padding:4px 8px; }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:8px; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:9px 10px; margin-top:8px; background:#0d1117; }
+  .card .t { font-weight:600; }
+  .card .m { color:var(--muted); font-size:12px; }
+  .path { font-size:13px; }
+  .path b { color:var(--hot); }
+  .score { float:right; font-weight:700; }
+  pre { white-space:pre-wrap; font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; margin:6px 0 0; color:#c9d1d9; }
+  .tag { display:inline-block; background:#1f2a36; border-radius:4px; padding:1px 6px; font-size:11px; margin:2px 3px 0 0; color:var(--muted); }
+  .empty { color:var(--muted); font-style:italic; }
+  .status { position:fixed; left:16px; bottom:12px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PeopleGraph</h1>
+  <span style="color:var(--muted)">who you actually know — and who's drifting</span>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--hot)"></i>warm &gt;70</span>
+    <span><i class="dot" style="background:var(--warm)"></i>40–70</span>
+    <span><i class="dot" style="background:var(--cold)"></i>cold &lt;40</span>
+    <span><i class="dot sq" style="background:var(--company)"></i>company</span>
+    <span><i class="dot" style="background:var(--action)"></i>agent action</span>
+  </div>
+</header>
+<main>
+  <div id="graph"></div>
+  <aside>
+    <section>
+      <h2>Warmest path to…</h2>
+      <div class="row">
+        <input id="company" list="companies" placeholder="stripe.com or 'notion'">
+        <datalist id="companies"></datalist>
+        <button id="pathBtn">Find</button>
+      </div>
+      <div id="pathOut"></div>
+    </section>
+    <section>
+      <h2>Going cold <button class="ghost" id="coldRefresh">refresh</button></h2>
+      <div id="coldOut" class="empty">loading…</div>
+    </section>
+    <section>
+      <h2>Next meeting <button class="ghost" id="briefBtn">brief me</button></h2>
+      <div id="briefOut" class="empty">click "brief me"</div>
+    </section>
+    <section>
+      <h2>Selected</h2>
+      <div id="personOut" class="empty">click a person in the graph</div>
+    </section>
+    <section>
+      <h2>Agent memory (AgentAction nodes)</h2>
+      <div id="actionsOut" class="empty">nothing yet</div>
+    </section>
+  </aside>
+</main>
+<div class="status" id="status"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (url, opts) => { const r = await fetch(url, opts); if (!r.ok) throw new Error((await r.json()).detail || r.statusText); return r.json(); };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const warmthColor = w => w == null ? '#6e7681' : w > 70 ? '#3fb950' : w >= 40 ? '#d29922' : '#f85149';
+
+let network, nodes = new vis.DataSet(), edges = new vis.DataSet();
+
+function toVis(g) {
+  const ns = g.nodes.map(n => {
+    if (n.kind === 'company') return { id:n.id, label:n.label, shape:'box', color:{background:'#1f3a5f', border:'#58a6ff'}, font:{color:'#e6edf3', size:13}, margin:8 };
+    if (n.kind === 'action') return { id:n.id, label:'⚡ ' + n.label, shape:'diamond', size:14, color:{background:'#bc8cff', border:'#e2c5ff'}, font:{color:'#e6edf3', size:11}, title:`${n.type} · ${n.createdAt}` };
+    const size = n.isMe ? 34 : 12 + Math.round((n.warmth || 0) / 7);
+    return { id:n.id, label:n.label, shape:'dot', size, kind:'person', email:n.id,
+             color:{background: n.isMe ? '#ffffff' : warmthColor(n.warmth), border: n.isMe ? '#ffffff' : '#0b0f14'},
+             font:{color: n.isMe ? '#fff' : '#c9d1d9', size: n.isMe ? 16 : 12},
+             title:`${n.label}${n.company ? ' · ' + n.company : ''}\nwarmth ${n.warmth ?? '–'} · last seen ${n.lastSeen ?? '–'}` };
+  });
+  const es = g.edges.map((e, i) => {
+    if (e.kind === 'works_at') return { id:'w'+i, from:e.from, to:e.to, color:{color:'#1f2a36'}, width:1, dashes:true, length:90 };
+    if (e.kind === 'introduced') return { id:'i'+i, from:e.from, to:e.to, arrows:'to', color:{color:'#d29922', opacity:.6}, width:1, dashes:[2,4], title:'introduced' };
+    if (e.kind === 'concerns') return { id:'c'+i, from:e.from, to:e.to, color:{color:'#bc8cff'}, width:2, length:60 };
+    return { id:'e'+i, from:e.from, to:e.to, width: Math.min(8, 0.5 + Math.log2(1 + e.count)), color:{color:'#30363d', highlight:'#58a6ff'}, title:`${e.count} emails` };
+  });
+  return { ns, es };
+}
+
+async function loadGraph(highlightNew) {
+  const g = await api('/graph');
+  const { ns, es } = toVis(g);
+  const before = new Set(nodes.getIds());
+  nodes.update(ns); edges.update(es);
+  for (const id of before) if (!ns.find(n => n.id === id)) nodes.remove(id);
+  if (!network) {
+    network = new vis.Network($('#graph'), { nodes, edges }, {
+      physics: { solver:'forceAtlas2Based', forceAtlas2Based:{ gravitationalConstant:-40, springLength:110, avoidOverlap:0.6 }, stabilization:{ iterations:200 } },
+      interaction: { hover:true, tooltipDelay:120 },
+      edges: { smooth:{ type:'continuous' } },
+    });
+    network.on('click', p => { const n = p.nodes[0] && nodes.get(p.nodes[0]); if (n && n.kind === 'person') showPerson(n.email); });
+  }
+  if (highlightNew) {
+    const fresh = ns.filter(n => !before.has(n.id)).map(n => n.id);
+    if (fresh.length) { network.selectNodes(fresh); network.focus(fresh[0], { scale:1.2, animation:true }); }
+  }
+  $('#status').textContent = `${g.nodes.filter(n=>n.kind==='person').length} people · ${g.nodes.filter(n=>n.kind==='company').length} companies · ${g.nodes.filter(n=>n.kind==='action').length} agent actions`;
+}
+
+async function findPath() {
+  const c = $('#company').value.trim(); if (!c) return;
+  $('#pathOut').innerHTML = '<div class="empty">searching…</div>';
+  const r = await api('/path?company=' + encodeURIComponent(c));
+  if (!r.paths.length) { $('#pathOut').innerHTML = '<div class="empty">no path found</div>'; return; }
+  $('#pathOut').innerHTML = r.paths.map(p =>
+    `<div class="card path"><span class="score" style="color:${warmthColor(p.score)}">${p.score}</span>
+      ${p.path.map((n,i) => i === p.path.length-1 ? `<b>${esc(n)}</b>` : esc(n)).join(' → ')}
+      <div class="m">${p.hops} hop${p.hops>1?'s':''} · ${esc(p.contact)} @ ${esc(p.company)}</div></div>`).join('');
+  const ids = r.paths[0].emails; network.selectNodes(ids); network.fit({ nodes: ids, animation:true });
+  loadActions(); loadGraph(false);
+}
+
+async function loadCold() {
+  const rows = await api('/cold');
+  if (!rows.length) { $('#coldOut').innerHTML = '<div class="empty">nobody is going cold 🎉</div>'; return; }
+  $('#coldOut').innerHTML = rows.map(r => `<div class="card">
+      <span class="score" style="color:${warmthColor(r.warmth)}">${r.warmth ?? '–'}</span>
+      <div class="t">${esc(r.name)}</div>
+      <div class="m">${esc(r.company || r.email)} · ${r.history} emails · silent ${r.daysSilent} days${r.openCommitments ? ' · owes you ' + r.openCommitments : ''}</div>
+      <div class="row" style="margin-top:6px"><button class="ghost" onclick="showPerson('${r.email}')">context</button>
+      <button class="ghost" onclick="draftFor('${r.email}', this)">draft re-engagement</button></div></div>`).join('');
+}
+
+async function draftFor(email, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'drafting…'; }
+  try {
+    const d = await api('/draft/' + encodeURIComponent(email), { method:'POST' });
+    $('#personOut').innerHTML = `<div class="card"><div class="t">Draft to ${esc(email)}</div>
+      <div class="m">grounded on ${d.groundedOn.threads} threads, ${d.groundedOn.commitments} commitments, mutual: ${esc(d.groundedOn.mutual.join(', ') || '–')}; prior agent actions read: ${d.usedPriorActions}</div>
+      <pre>Subject: ${esc(d.subject)}\n\n${esc(d.body)}</pre>
+      <div class="m" style="margin-top:6px"><b>why:</b> ${esc(d.rationale)}</div></div>`;
+    await loadGraph(true); await loadActions();
+  } catch (e) { alert(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'draft re-engagement'; } }
+}
+
+async function showPerson(email) {
+  const p = await api('/person/' + encodeURIComponent(email));
+  const c = p.person;
+  $('#personOut').innerHTML = `<div class="card">
+    <span class="score" style="color:${warmthColor(c.warmth)}">${c.warmth ?? '–'}</span>
+    <div class="t">${esc(c.name)}</div>
+    <div class="m">${esc(p.company || c.email)} · ${c.emails} emails · ${c.meetings} meetings · last seen ${esc(c.lastSeen)}</div>
+    <div style="margin-top:6px">${p.topics.map(t => `<span class="tag">${esc(t)}</span>`).join('') || '<span class="m">no topics extracted</span>'}</div>
+    ${p.commitments.length ? '<div class="m" style="margin-top:6px"><b>commitments</b></div>' + p.commitments.map(x => `<div class="m">• [${x.direction === 'owed_by_me' ? 'I owe' : 'they owe'}${x.status === 'open' ? '' : ', done'}] ${esc(x.text)}</div>`).join('') : ''}
+    ${p.mutual.length ? `<div class="m" style="margin-top:6px"><b>mutual:</b> ${p.mutual.map(m => esc(m.name)).join(', ')}</div>` : ''}
+    ${p.threads.length ? '<div class="m" style="margin-top:6px"><b>recent threads</b></div>' + p.threads.slice(0,4).map(t => `<div class="m">• ${esc(t.subject)} <span style="opacity:.6">(${(t.lastMessageAt||'').slice(0,10)})</span></div>`).join('') : ''}
+    ${p.priorActions.length ? `<div class="m" style="margin-top:6px"><b>agent memory:</b> ${p.priorActions.length} prior action(s) on this person</div>` : ''}
+    <div class="row" style="margin-top:8px"><button onclick="draftFor('${esc(c.email)}', this)">draft re-engagement</button></div></div>`;
+}
+
+async function loadBrief() {
+  $('#briefOut').innerHTML = '<div class="empty">building brief…</div>';
+  const b = await api('/brief');
+  if (!b.meeting) { $('#briefOut').innerHTML = '<div class="empty">no upcoming meetings</div>'; return; }
+  $('#briefOut').innerHTML = `<div class="card"><div class="t">${esc(b.meeting)}</div><div class="m">${esc(b.start).slice(0,16).replace('T',' ')}</div></div>` +
+    b.attendees.map(a => `<div class="card"><span class="score" style="color:${warmthColor(a.warmth)}">${a.warmth ?? '–'}</span>
+      <div class="t">${esc(a.name)} <span class="m">· ${esc(a.company || '')}</span></div>
+      <div class="m">${a.emails} emails · last seen ${esc(a.lastSeen)}</div>
+      <div>${a.topics.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+      ${a.theyOwe.length ? `<div class="m">they owe: ${a.theyOwe.map(esc).join('; ')}</div>` : ''}
+      ${a.iOwe.length ? `<div class="m">you owe: ${a.iOwe.map(esc).join('; ')}</div>` : ''}</div>`).join('');
+  loadActions(); loadGraph(false);
+}
+
+async function loadActions() {
+  const rows = await api('/actions');
+  if (!rows.length) { $('#actionsOut').innerHTML = '<div class="empty">nothing yet — every draft, brief and query gets written back here</div>'; return; }
+  $('#actionsOut').innerHTML = rows.map(a => `<div class="card"><div class="t">${esc(a.type)} → ${esc(a.person)}</div>
+    <div class="m">${esc(a.createdAt).slice(0,16).replace('T',' ')}</div><div class="m">${esc((a.content||'').slice(0,140))}${(a.content||'').length>140?'…':''}</div></div>`).join('');
+}
+
+$('#pathBtn').onclick = findPath;
+$('#company').addEventListener('keydown', e => { if (e.key === 'Enter') findPath(); });
+$('#coldRefresh').onclick = loadCold;
+$('#briefBtn').onclick = loadBrief;
+(async () => {
+  await loadGraph(false);
+  api('/companies').then(cs => $('#companies').innerHTML = cs.map(c => `<option value="${esc(c.domain)}">${esc(c.name)} (${c.people})</option>`).join(''));
+  loadCold(); loadActions();
+})().catch(e => { $('#status').textContent = 'error: ' + e.message; });
+</script>
+</body>
+</html>

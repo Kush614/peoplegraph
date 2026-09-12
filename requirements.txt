@@ -1,0 +1,9 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+neo4j>=5.24
+icalendar>=6.0
+python-dotenv>=1.0
+anthropic>=0.60
+pydantic>=2.7
+google-api-python-client>=2.140
+google-auth-oauthlib>=1.2

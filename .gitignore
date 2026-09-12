@@ -1,0 +1,10 @@
+.env
+.venv/
+data/*.mbox
+data/*.ics
+__pycache__/
+*.pyc
+data/credentials.json
+data/token.json
+data/owner.txt
+.gstack/
