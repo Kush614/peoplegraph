@@ -35,6 +35,11 @@
   pre { white-space:pre-wrap; font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; margin:6px 0 0; color:#c9d1d9; }
   .tag { display:inline-block; background:#1f2a36; border-radius:4px; padding:1px 6px; font-size:11px; margin:2px 3px 0 0; color:var(--muted); }
   .empty { color:var(--muted); font-style:italic; }
+  .sector { margin-top:8px; }
+  .sector .t { font-weight:600; font-size:12px; display:flex; }
+  .sector .t span { margin-left:auto; color:var(--muted); font-weight:400; }
+  .bubbles { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .bubble { border-radius:999px; padding:2px 8px; font-size:11px; cursor:pointer; border:1px solid transparent; color:#0b0f14; font-weight:600; white-space:nowrap; }
   .status { position:fixed; left:16px; bottom:12px; color:var(--muted); font-size:12px; }
 </style>
 </head>
@@ -69,6 +74,10 @@
     <section>
       <h2>Next meeting <button class="ghost" id="briefBtn">brief me</button></h2>
       <div id="briefOut" class="empty">click "brief me"</div>
+    </section>
+    <section>
+      <h2>Competition radar <button class="ghost" id="radarBtn">scan</button></h2>
+      <div id="radarOut" class="empty">companies in your network, grouped by sector, ranked by your reach</div>
     </section>
     <section>
       <h2>Selected</h2>
@@ -203,6 +212,15 @@ async function loadActions() {
     <div class="m">${esc(a.createdAt).slice(0,16).replace('T',' ')}</div><div class="m">${esc((a.content||'').slice(0,140))}${(a.content||'').length>140?'…':''}</div></div>`).join('');
 }
 
+async function loadRadar() {
+  $('#radarOut').innerHTML = '<div class="empty">scanning + sector-tagging your network…</div>';
+  const r = await api('/radar');
+  $('#radarOut').innerHTML = r.sectors.slice(0, 14).map(s => `<div class="sector"><div class="t">${esc(s.sector)}<span>${s.companies.length} companies · reach ${s.reach}</span></div>
+    <div class="bubbles">${s.companies.slice(0, 8).map(c => `<span class="bubble" title="${esc(c.names.join(', '))} · ${c.people} people · last contact ${esc(c.lastContact||'–')}"
+      style="background:${warmthColor(c.maxWarmth)};font-size:${Math.min(14, 10 + c.people)}px;opacity:${0.55 + Math.min(0.45, c.reach/200)}"
+      onclick="$('#company').value='${esc(c.domain)}';findPath()">${esc(c.name)} ${c.maxWarmth ?? ''}</span>`).join('')}</div></div>`).join('');
+}
+$('#radarBtn').onclick = loadRadar;
 $('#pathBtn').onclick = findPath;
 $('#company').addEventListener('keydown', e => { if (e.key === 'Enter') findPath(); });
 $('#coldRefresh').onclick = loadCold;

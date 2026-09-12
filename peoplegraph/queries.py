@@ -98,6 +98,22 @@ RETURN p.email AS email, p.name AS name, c.name AS company, p.warmth AS warmth,
        emails, topics, theyOwe, iOwe, actions, introducedBy, introduced, mutual, colleagues
 """
 
+RADAR = """
+MATCH (me:Person {isMe:true})
+MATCH (c:Company)<-[:WORKS_AT]-(p:Person)
+OPTIONAL MATCH (me)-[e:EMAILED]-(p)
+WITH c, p, sum(e.count) AS direct
+WITH c, count(p) AS people, sum(CASE WHEN direct > 0 THEN 1 ELSE 0 END) AS known,
+     max(p.warmth) AS maxWarmth, avg(p.warmth) AS avgWarmth, max(p.lastSeen) AS lastContact,
+     collect({name: p.name, warmth: p.warmth})[..3] AS sample
+WHERE people >= 1
+RETURN c.domain AS domain, c.name AS name, c.sector AS sector, people, known,
+       maxWarmth, toInteger(round(avgWarmth)) AS avgWarmth, toString(lastContact) AS lastContact,
+       toInteger(round(maxWarmth * 0.6 + avgWarmth * 0.2 + CASE WHEN people > 5 THEN 20 ELSE people * 4 END)) AS reach,
+       [x IN sample | x.name] AS names
+ORDER BY reach DESC LIMIT 120
+"""
+
 WRITE_ACTION = """
 MATCH (p:Person {email:$email})
 CREATE (a:AgentAction {id:$id, type:$type, content:$content, rationale:$rationale, createdAt:$createdAt})
@@ -143,6 +159,14 @@ def person_context(driver, email: str) -> dict | None:
     ctx["commitments"] = [c for c in ctx["commitments"] if c.get("text")]
     ctx["priorActions"] = [a for a in ctx["priorActions"] if a.get("type")]
     return ctx
+
+
+def radar(driver) -> list[dict]:
+    return db.run(driver, RADAR)
+
+
+def set_sectors(driver, rows: list[dict]) -> None:
+    db.run(driver, "UNWIND $rows AS r MATCH (c:Company {domain: r.domain}) SET c.sector = r.sector", rows=rows)
 
 
 def lookup(driver, emails: list[str]) -> list[dict]:

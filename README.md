@@ -94,6 +94,7 @@ They live in `cypher/` so you can paste them straight into the Aura query editor
 | `GET /brief` | Q3 for the next meeting; writes a `brief` AgentAction per attendee |
 | `GET /person/{email}` | GraphRAG context bundle: threads, topics, commitments, mutual contacts, prior AgentActions |
 | `POST /draft/{email}` | draft re-engagement email grounded on that bundle; writes a `draft_email` AgentAction |
+| `GET /radar` | competition radar: every company in your network, LLM-tagged by sector, ranked by your reach (people, warmth) |
 | `GET /actions` | agent memory |
 
 ## MCP (the live natural-language demo)

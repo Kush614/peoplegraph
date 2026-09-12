@@ -113,6 +113,30 @@ def draft(email: str):
                            "commitments": len(ctx["commitments"]), "mutual": [m["name"] for m in ctx["mutual"]]}}
 
 
+@app.get("/radar")
+def radar(refresh: bool = False):
+    """Competition radar: every company in your network, LLM-tagged by sector, ranked by your reach into it."""
+    rows = queries.radar(app.state.driver)
+    untagged = [r["domain"] for r in rows if refresh or not r.get("sector")]
+    if untagged:
+        try:
+            tags: dict[str, str] = {}
+            for i in range(0, len(untagged), 60):
+                tags.update(llm.classify_sectors(untagged[i:i + 60]))
+            queries.set_sectors(app.state.driver, [{"domain": d, "sector": s} for d, s in tags.items()])
+            for r in rows:
+                r["sector"] = tags.get(r["domain"], r.get("sector"))
+        except Exception as exc:  # radar still renders, just unsectored
+            for r in rows:
+                r.setdefault("sector", None)
+            print("sector tagging failed:", exc)
+    sectors: dict[str, list] = {}
+    for r in rows:
+        sectors.setdefault(r.get("sector") or "Other", []).append(r)
+    ranked = sorted(sectors.items(), key=lambda kv: -sum(x["reach"] for x in kv[1]))
+    return {"sectors": [{"sector": k, "reach": sum(x["reach"] for x in v), "companies": v} for k, v in ranked]}
+
+
 @app.get("/actions")
 def actions():
     return queries.actions(app.state.driver)

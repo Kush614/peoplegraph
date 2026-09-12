@@ -157,3 +157,36 @@ def _template_draft(ctx: dict) -> Draft:
         rationale=f"No LLM key configured — template draft anchored on the last thread ({last_thread}), "
                   f"top topic ({topic}), and {len(mutual)} mutual contact(s).",
     )
+
+
+# ---------------------------------------------------------------- competition radar
+class SectorTag(BaseModel):
+    domain: str
+    sector: str
+
+
+class SectorBatch(BaseModel):
+    companies: list[SectorTag]
+
+
+SECTOR_SYSTEM = (
+    "Classify each company domain into ONE short market sector label (2-4 words, Title Case), e.g. "
+    "'AI Infrastructure', 'Voice AI', 'Developer Tools', 'Venture Capital', 'University', 'Recruiting', "
+    "'Fintech', 'Healthcare AI', 'Consumer Social', 'Events & Community'. Use your knowledge of the company; "
+    "if unknown, infer from the domain. Reuse identical labels for companies in the same space so they "
+    "cluster. Return every domain you were given."
+)
+
+
+def classify_sectors(domains: list[str]) -> dict[str, str]:
+    client = _client()
+    if client is None:
+        return {d: d.rsplit(".", 1)[-1].upper() + " domain" for d in domains}
+    resp = client.messages.parse(
+        model=config.LLM_MODEL, max_tokens=16000, system=SECTOR_SYSTEM,
+        messages=[{"role": "user", "content": json.dumps(domains)}],
+        output_format=SectorBatch, output_config={"effort": "low"},
+    )
+    if resp.parsed_output is None:
+        raise RuntimeError("sector classification returned no parsed output")
+    return {c.domain: c.sector for c in resp.parsed_output.companies}
