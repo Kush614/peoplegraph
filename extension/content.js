@@ -1,6 +1,7 @@
 // PeopleGraph overlay: finds the people on screen in Gmail / Calendar, asks the local API about them,
 // renders a card panel, and decorates names with a warmth dot.
 (() => {
+  console.info("[PeopleGraph] content script loaded on", location.host);
   const DEFAULT_API = "http://127.0.0.1:8010";
   let API = DEFAULT_API;
   chrome.storage?.sync?.get({ apiBase: DEFAULT_API }, v => { API = v.apiBase || DEFAULT_API; });
@@ -64,7 +65,8 @@
       <div id="pg-paths"></div>
       <div id="pg-body" class="pg-empty">Open an email, event, contact, share dialog or meeting to see who you actually know.</div>`;
     document.body.appendChild(panel);
-    panel.querySelector("#pg-toggle").onclick = () => { collapsed = !collapsed; panel.querySelector("#pg-body").hidden = collapsed; panel.querySelector("#pg-paths").hidden = collapsed; panel.querySelector("#pg-toggle").textContent = collapsed ? "+" : "–"; };
+    panel.querySelector("#pg-toggle").onclick = e => { e.stopPropagation(); collapsed = !collapsed; panel.classList.toggle("pg-min", collapsed); panel.querySelector("#pg-toggle").textContent = collapsed ? "+" : "–"; };
+    panel.querySelector(".pg-head").addEventListener("click", () => { if (collapsed) panel.querySelector("#pg-toggle").click(); });
     panel.querySelector("#pg-go").onclick = warmPath;
     panel.querySelector("#pg-company").addEventListener("keydown", e => { if (e.key === "Enter") warmPath(); e.stopPropagation(); });
     panel.querySelector("#pg-company").addEventListener("keypress", e => e.stopPropagation()); // keep Gmail shortcuts out
@@ -203,7 +205,7 @@
 
   // ---- observe the SPA ----------------------------------------------------------------
   let timer;
-  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => render(visibleEmails()), 400); };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (panel && !panel.isConnected) document.body.appendChild(panel); render(visibleEmails()); }, 400); };
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("hashchange", schedule);
   ensurePanel();

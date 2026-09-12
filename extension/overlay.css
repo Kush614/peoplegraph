@@ -1,4 +1,4 @@
-#pg-panel { position: fixed; right: 18px; bottom: 18px; width: 340px; max-height: 72vh; overflow-y: auto; z-index: 2147483000;
+#pg-panel { position: fixed !important; right: 18px; bottom: 18px; width: 340px; max-height: 72vh; overflow-y: auto; z-index: 2147483647 !important; display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important;
   background: rgba(12, 16, 24, .66); -webkit-backdrop-filter: blur(22px) saturate(160%); backdrop-filter: blur(22px) saturate(160%);
   color: #e9eef5; border: 1px solid rgba(255,255,255,.12); border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
@@ -35,3 +35,7 @@
 .pg-path { font-size: 12px; margin-top: 6px; }
 .pg-path b { color: #3fb950; }
 .pg-path .pg-score { float: right; font-weight: 700; }
+
+#pg-panel.pg-min { width: auto; max-height: none; border-radius: 999px; padding: 0; }
+#pg-panel.pg-min .pg-head { border: 0; padding: 8px 12px; cursor: pointer; }
+#pg-panel.pg-min .pg-search, #pg-panel.pg-min #pg-paths, #pg-panel.pg-min #pg-body { display: none !important; }
