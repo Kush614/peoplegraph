@@ -65,6 +65,12 @@ Click a person: the *Selected* panel shows their context (topics, commitments, m
 
 ![Selected person and warm path](docs/img/ui-selected-path.png)
 
+### Claude Code + Neo4j MCP — ask the graph in plain English
+
+No PeopleGraph code involved here: Claude Code talks to Aura directly through the official Neo4j MCP server. Asked *"Who is my warmest path to anyone at a16z, and what do I owe them?"*, it introspected the schema, wrote three Cypher queries on its own (warm path, shared context, open commitments) and answered from the live graph — including an introduction it found on the `INTRODUCED` edges.
+
+![Claude Code querying the graph over MCP](docs/img/mcp-claude-code.png)
+
 ### Competition radar — where you actually have reach
 
 Every company in your network, sector-tagged by the LLM, ranked by your reach (people you know × warmth). Bubble size = people, colour = warmest contact. Click a bubble to get the warm path.
@@ -277,7 +283,16 @@ Example (real, names changed): for a VC contact silent 184 days after 17 emails,
 
 ## Neo4j MCP: natural-language queries
 
-The official `mcp-neo4j-cypher` server exposes `get_neo4j_schema`, `read_neo4j_cypher`, `write_neo4j_cypher`. Any MCP client introspects the schema, writes Cypher, and runs it against Aura live.
+**What MCP is, in one line:** a standard way for an AI assistant to call tools. The official `mcp-neo4j-cypher` server turns your Aura database into three tools — `get_neo4j_schema`, `read_neo4j_cypher`, `write_neo4j_cypher` — and any MCP client (Claude Code, Claude Desktop, Qoder, Cursor) can use them.
+
+**How a question becomes an answer** (see the screenshot above):
+
+1. You ask in English inside Claude Code: *"Who is my warmest path to anyone at a16z?"*
+2. Claude calls `get_neo4j_schema` — it learns there are `Person`, `Company`, `Commitment`, `AgentAction` nodes and `EMAILED`, `WORKS_AT`, `INTRODUCED`, `OWES` relationships, with counts and property types.
+3. It writes Cypher itself and runs it with `read_neo4j_cypher` — typically two or three queries: find people at the company, gather shared context (mutual contacts, introductions, threads, meetings), check open commitments.
+4. It answers with the path, the evidence, and what's outstanding.
+
+Nothing is hard-coded: the same session can ask *"who introduced me to whom this year?"*, *"which of my relationships at universities are going cold?"*, or *"what has the agent already done for <person>?"* (reads `AgentAction` nodes — the agent's memory is queryable by the agent). `write_neo4j_cypher` lets an agent record its own actions or mark a commitment done.
 
 ```bash
 mcp/register.sh claude-code   # registers with Claude Code (reads .env)
